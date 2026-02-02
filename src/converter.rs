@@ -39,7 +39,7 @@ mod tests {
     // A "Mock" provider that doesn't use the internet
     struct MockProvider;
 
-    #[async_trait]
+    #[async_trait(?Send)]
     impl ExchangeProvider for MockProvider {
         async fn fetch_rates(&self, _base: &str) -> Result<ExchangeRates, String> {
             let mut rates = HashMap::new();

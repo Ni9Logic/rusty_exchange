@@ -1,8 +1,9 @@
 use crate::models::ExchangeRates;
 use async_trait::async_trait;
 use reqwest::Client;
+use crate::cache::FileCache;
 
-#[async_trait]
+#[async_trait(?Send)]
 pub trait ExchangeProvider {
     async fn fetch_rates(&self, base: &str) -> Result<ExchangeRates, String>;
 }
@@ -21,7 +22,7 @@ impl ExchangeRateApi {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl ExchangeProvider for ExchangeRateApi {
     async fn fetch_rates(&self, base: &str) -> Result<ExchangeRates, String> {
         let url = format!(
@@ -40,5 +41,34 @@ impl ExchangeProvider for ExchangeRateApi {
             .await
             .map_err(|e| format!("Parsing error: {}", e))
 
+    }
+}
+
+pub struct CachedProvider<P: ExchangeProvider> {
+    inner: P,
+    cache: FileCache,
+}
+
+impl<P: ExchangeProvider> CachedProvider<P> {
+    pub fn new(inner: P) -> Self {
+        Self { inner, cache: FileCache }
+    }
+}
+
+#[async_trait(?Send)]
+impl<P: ExchangeProvider> ExchangeProvider for CachedProvider<P> {
+    async fn fetch_rates(&self, base: &str) -> Result<ExchangeRates, String> {
+        // 1. Try to get from cache
+        if let Some(rates) = self.cache.get(base) {
+            return Ok(rates);
+        }
+
+        // 2. If not in cache, use the inner provider (the real API)
+        let fresh_rates = self.inner.fetch_rates(base).await?;
+
+        // 3. Save to cache for next time
+        self.cache.save(&fresh_rates);
+
+        Ok(fresh_rates)
     }
 }
